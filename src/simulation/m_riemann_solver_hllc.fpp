@@ -1180,9 +1180,12 @@ contains
                                     xi_M = (5.e-1_wp + sign(5.e-1_wp, s_S))
                                     xi_P = (5.e-1_wp - sign(5.e-1_wp, s_S))
 
-                                    ! Low Mach correction
-                                    pcorr = f_low_Mach_pcorr_hllc(vel_L_rms, vel_R_rms, c_L, c_R, rho_L, rho_R, s_L, s_R, &
-                                                                  & vel_L(dir_idx(1)), vel_R(dir_idx(1)))
+                                    ! Low Mach correction (M4 E2a: the call returns exactly 0 unless low_Mach == 1, so skip it)
+                                    pcorr = 0._wp
+                                    if (low_Mach == 1) then
+                                        pcorr = f_low_Mach_pcorr_hllc(vel_L_rms, vel_R_rms, c_L, c_R, rho_L, rho_R, s_L, s_R, &
+                                                                      & vel_L(dir_idx(1)), vel_R(dir_idx(1)))
+                                    end if
 
                                     #:if HYPO
                                         if (n == 0) then
