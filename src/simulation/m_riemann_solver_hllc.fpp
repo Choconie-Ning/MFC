@@ -1047,8 +1047,17 @@ contains
                                         H_L = (E_L + pres_L)/rho_L
                                         H_R = (E_R + pres_R)/rho_R
                                     else
-                                        call s_compute_energy(pres_L, alpha_rho_L, alpha_lim_L, vel_L_rms, E_L)
-                                        call s_compute_energy(pres_R, alpha_rho_R, alpha_lim_R, vel_R_rms, E_R)
+                                        ! M4 E2b: s_compute_energy inlined. Its internal s_compute_mixture_coefficients call would repeat
+                                        ! the one above with the same (alpha_rho, alpha_lim); on this non-chemistry path rho/gamma/pi_inf/qv
+                                        ! are unchanged since, so the body reduces to the energy formula (two direct + two nested calls gone).
+                                        E_L = gamma_L*pres_L + pi_inf_L
+                                        E_R = gamma_R*pres_R + pi_inf_R
+                                        if (bubbles_euler) then
+                                            E_L = E_L*(1._wp - alpha_lim_L(num_fluids))
+                                            E_R = E_R*(1._wp - alpha_lim_R(num_fluids))
+                                        end if
+                                        E_L = E_L + qv_L + 5.e-1_wp*rho_L*vel_L_rms
+                                        E_R = E_R + qv_R + 5.e-1_wp*rho_R*vel_R_rms
 
                                         H_L = (E_L + pres_L)/rho_L
                                         H_R = (E_R + pres_R)/rho_R
