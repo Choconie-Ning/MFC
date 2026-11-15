@@ -836,9 +836,16 @@ contains
                         end do
                     end do
                     $:END_GPU_PARALLEL_LOOP()
-                    #:for HYPO in [True, False]
+                    ! M4 E1: in y/z the pure-fluid kernel is also emitted without its geometric source-flux block
+                    ! (cylindrical/axisymmetric), selected outside the kernel; that variant runs only when the block
+                    ! could not execute anyway, so results are unchanged. x has no such block.
+                    #:set _hllc_variants = [(True, True), (False, True)] + ([(False, False)] if NORM_DIR > 1 else [])
+                    #:set _hllc_geom_cond = 'cyl_coord' if NORM_DIR == 2 else 'grid_geometry == 3'
+                    #:for HYPO, GEOM in _hllc_variants
                         #:if HYPO
                         else if (hypoelasticity) then
+                        #:elif GEOM and NORM_DIR > 1
+                        else if (${_hllc_geom_cond}$) then
                         #:else
                         else
                         #:endif
@@ -888,6 +895,9 @@ contains
                         ! hypoelastic run faults inside the pure-fluid kernel. Two call sites are what
                         ! give two line numbers. Do not merge them back into one (still faults on AFAR 24.3).
                         #:if HYPO
+                            $:GPU_PARALLEL_LOOP(collapse=3, private=_hllc_priv, copyin='[is1, is2, is3]', &
+                                                & firstprivate='[Re_size_loc1, Re_size_loc2]')
+                        #:elif GEOM
                             $:GPU_PARALLEL_LOOP(collapse=3, private=_hllc_priv, copyin='[is1, is2, is3]', &
                                                 & firstprivate='[Re_size_loc1, Re_size_loc2]')
                         #:else
@@ -1524,7 +1534,7 @@ contains
                                     #:endif
 
                                     ! Geometrical source flux for cylindrical coordinates
-                                    #:if (NORM_DIR == 2)
+                                    #:if (NORM_DIR == 2) and GEOM
                                         #:if HYPO
                                             if (cyl_coord) then
                                                 $:GPU_LOOP(parallelism='[seq]')
@@ -1569,7 +1579,7 @@ contains
                                             end if
                                         #:endif
                                     #:endif
-                                    #:if (NORM_DIR == 3)
+                                    #:if (NORM_DIR == 3) and GEOM
                                         if (grid_geometry == 3) then
                                             $:GPU_LOOP(parallelism='[seq]')
                                             do i = 1, sys_size
