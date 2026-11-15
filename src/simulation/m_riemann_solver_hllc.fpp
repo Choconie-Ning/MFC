@@ -963,31 +963,10 @@ contains
                                         end if
                                     #:endif
 
-                                    ! Change this by splitting it into the cases present in the bubbles_euler
-                                    if (mpp_lim) then
-                                        $:GPU_LOOP(parallelism='[seq]')
-                                        do i = 1, num_fluids
-                                            qL_prim_rsx_vf(${SF('')}$, i) = max(0._wp, qL_prim_rsx_vf(${SF('')}$, i))
-                                            qL_prim_rsx_vf(${SF('')}$, eqn_idx%E + i) = min(max(0._wp, qL_prim_rsx_vf(${SF('')}$, &
-                                                           & eqn_idx%E + i)), 1._wp)
-                                            qR_prim_rsx_vf(${SF(' + 1')}$, i) = max(0._wp, qR_prim_rsx_vf(${SF(' + 1')}$, i))
-                                            qR_prim_rsx_vf(${SF(' + 1')}$, eqn_idx%E + i) = min(max(0._wp, &
-                                                           & qR_prim_rsx_vf(${SF(' + 1')}$, eqn_idx%E + i)), 1._wp)
-                                            alpha_L_sum = alpha_L_sum + qL_prim_rsx_vf(${SF('')}$, eqn_idx%E + i)
-                                            alpha_R_sum = alpha_R_sum + qR_prim_rsx_vf(${SF(' + 1')}$, eqn_idx%E + i)
-                                        end do
-
-                                        $:GPU_LOOP(parallelism='[seq]')
-                                        do i = 1, num_fluids
-                                            qL_prim_rsx_vf(${SF('')}$, eqn_idx%E + i) = qL_prim_rsx_vf(${SF('')}$, &
-                                                           & eqn_idx%E + i)/max(alpha_L_sum, sgm_eps)
-                                            qR_prim_rsx_vf(${SF(' + 1')}$, eqn_idx%E + i) = qR_prim_rsx_vf(${SF(' + 1')}$, &
-                                                           & eqn_idx%E + i)/max(alpha_R_sum, sgm_eps)
-                                        end do
-                                    end if
-
-                                    ! Post-limiter loads for the mixture properties; alpha_L/R keep the pre-limiter loads used
-                                    ! downstream
+                                    ! M4 E3: the reconstructed partial densities and volume fractions are loaded once. mpp_lim clips and
+                                    ! renormalizes them in these private arrays and stores the final values once, so the arrays in
+                                    ! memory end up exactly as before; nothing is re-read. alpha_L/R keep the pre-limiter loads used
+                                    ! downstream.
                                     $:GPU_LOOP(parallelism='[seq]')
                                     do i = 1, num_fluids
                                         alpha_rho_L(i) = qL_prim_rsx_vf(${SF('')}$, i)
@@ -995,6 +974,29 @@ contains
                                         alpha_lim_L(i) = qL_prim_rsx_vf(${SF('')}$, eqn_idx%E + i)
                                         alpha_lim_R(i) = qR_prim_rsx_vf(${SF(' + 1')}$, eqn_idx%E + i)
                                     end do
+
+                                    ! Change this by splitting it into the cases present in the bubbles_euler
+                                    if (mpp_lim) then
+                                        $:GPU_LOOP(parallelism='[seq]')
+                                        do i = 1, num_fluids
+                                            alpha_rho_L(i) = max(0._wp, alpha_rho_L(i))
+                                            alpha_lim_L(i) = min(max(0._wp, alpha_lim_L(i)), 1._wp)
+                                            alpha_rho_R(i) = max(0._wp, alpha_rho_R(i))
+                                            alpha_lim_R(i) = min(max(0._wp, alpha_lim_R(i)), 1._wp)
+                                            alpha_L_sum = alpha_L_sum + alpha_lim_L(i)
+                                            alpha_R_sum = alpha_R_sum + alpha_lim_R(i)
+                                        end do
+
+                                        $:GPU_LOOP(parallelism='[seq]')
+                                        do i = 1, num_fluids
+                                            alpha_lim_L(i) = alpha_lim_L(i)/max(alpha_L_sum, sgm_eps)
+                                            alpha_lim_R(i) = alpha_lim_R(i)/max(alpha_R_sum, sgm_eps)
+                                            qL_prim_rsx_vf(${SF('')}$, i) = alpha_rho_L(i)
+                                            qR_prim_rsx_vf(${SF(' + 1')}$, i) = alpha_rho_R(i)
+                                            qL_prim_rsx_vf(${SF('')}$, eqn_idx%E + i) = alpha_lim_L(i)
+                                            qR_prim_rsx_vf(${SF(' + 1')}$, eqn_idx%E + i) = alpha_lim_R(i)
+                                        end do
+                                    end if
 
                                     call s_compute_mixture_coefficients(alpha_rho_L, alpha_lim_L, rho_L, gamma_L, pi_inf_L, qv_L)
                                     call s_compute_mixture_coefficients(alpha_rho_R, alpha_lim_R, rho_R, gamma_R, pi_inf_R, qv_R)
@@ -1201,12 +1203,11 @@ contains
                                         pres_tot_star = pres_tot_L + A_L*(s_S - vel_L(dir_idx(1)))
                                     #:endif
 
-                                    ! COMPUTING THE HLLC FLUXES MASS FLUX.
+                                    ! COMPUTING THE HLLC FLUXES MASS FLUX. (M4 E3: alpha_rho_L/R(i) hold qL/qR(i) after mpp_lim)
                                     $:GPU_LOOP(parallelism='[seq]')
                                     do i = 1, eqn_idx%cont%end
-                                        flux_rsx_vf(${SF('')}$, i) = xi_M*qL_prim_rsx_vf(${SF('')}$, &
-                                                    & i)*(vel_L(dir_idx(1)) + s_M*xi_L_m1) + xi_P*qR_prim_rsx_vf(${SF(' + 1')}$, &
-                                                    & i)*(vel_R(dir_idx(1)) + s_P*xi_R_m1)
+                                        flux_rsx_vf(${SF('')}$, i) = xi_M*alpha_rho_L(i)*(vel_L(dir_idx(1)) + s_M*xi_L_m1) &
+                                                    & + xi_P*alpha_rho_R(i)*(vel_R(dir_idx(1)) + s_P*xi_R_m1)
                                     end do
 
                                     #:if HYPO
@@ -1364,12 +1365,12 @@ contains
                                                     & ))))) + (s_M/s_L)*(s_P/s_R)*pcorr*s_S
                                     #:endif
 
-                                    ! VOLUME FRACTION FLUX.
+                                    ! VOLUME FRACTION FLUX. (M4 E3: alpha_lim_L/R(k) hold qL/qR(E + k) after mpp_lim; 5-eq: adv = E+1..E+N)
                                     $:GPU_LOOP(parallelism='[seq]')
                                     do i = eqn_idx%adv%beg, eqn_idx%adv%end
-                                        flux_rsx_vf(${SF('')}$, i) = xi_M*qL_prim_rsx_vf(${SF('')}$, &
-                                                    & i)*(vel_L(dir_idx(1)) + s_M*xi_L_m1) + xi_P*qR_prim_rsx_vf(${SF(' + 1')}$, &
-                                                    & i)*(vel_R(dir_idx(1)) + s_P*xi_R_m1)
+                                        flux_rsx_vf(${SF('')}$, i) = xi_M*alpha_lim_L(i - eqn_idx%E)*(vel_L(dir_idx(1)) &
+                                                    & + s_M*xi_L_m1) + xi_P*alpha_lim_R(i - eqn_idx%E)*(vel_R(dir_idx(1)) &
+                                                    & + s_P*xi_R_m1)
                                     end do
 
                                     ! VOLUME FRACTION SOURCE FLUX.
