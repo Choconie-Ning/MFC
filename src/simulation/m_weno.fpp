@@ -1126,11 +1126,19 @@ contains
                                                 alpha(q) = d_cbL_${XYZ}$ (q, ${SV}$)/(beta(q)**2._wp)
                                             end do
                                             omega = alpha/sum(alpha)
+                                            ! M4.1 W1: Henrick mapping g_q = N_q/D_q over a common denominator:
+                                            ! alpha(q) = N_q*prod_{k/=q} D_k, so the shared normalization below
+                                            ! gives g_q/sum(g) without reciprocals of D_q (all factors in [0, 3]).
+                                            ! delta (otherwise TENO-only scratch) holds D_q.
                                             do q = 0, weno_num_stencils
-                                                alpha(q) = (d_cbL_${XYZ}$ (q, ${SV}$)*(1._wp + d_cbL_${XYZ}$ (q, &
-                                                      & ${SV}$) - 3._wp*omega(q)) + omega(q)**2._wp)*(omega(q)/(d_cbL_${XYZ}$ (q, &
-                                                      & ${SV}$)**2._wp + omega(q)*(1._wp - 2._wp*d_cbL_${XYZ}$ (q, ${SV}$))))
+                                                delta(q) = d_cbL_${XYZ}$ (q, ${SV}$)**2._wp &
+                                                      & + omega(q)*(1._wp - 2._wp*d_cbL_${XYZ}$ (q, ${SV}$))
+                                                alpha(q) = (d_cbL_${XYZ}$ (q, ${SV}$)*(1._wp + d_cbL_${XYZ}$ (q, ${SV}$) &
+                                                      & - 3._wp*omega(q)) + omega(q)**2._wp)*omega(q)
                                             end do
+                                            alpha(0) = alpha(0)*(delta(1)*delta(2))
+                                            alpha(1) = alpha(1)*(delta(0)*delta(2))
+                                            alpha(2) = alpha(2)*(delta(0)*delta(1))
                                         else if (wenoz) then
                                             ! Borges, et al. (2008)
 
@@ -1186,11 +1194,19 @@ contains
                                                 alpha(q) = d_cbR_${XYZ}$ (q, ${SV}$)/(beta(q)**2._wp)
                                             end do
                                             omega = alpha/sum(alpha)
+                                            ! M4.1 W1: Henrick mapping g_q = N_q/D_q over a common denominator:
+                                            ! alpha(q) = N_q*prod_{k/=q} D_k, so the shared normalization below
+                                            ! gives g_q/sum(g) without reciprocals of D_q (all factors in [0, 3]).
+                                            ! delta (otherwise TENO-only scratch) holds D_q.
                                             do q = 0, weno_num_stencils
-                                                alpha(q) = (d_cbR_${XYZ}$ (q, ${SV}$)*(1._wp + d_cbR_${XYZ}$ (q, &
-                                                      & ${SV}$) - 3._wp*omega(q)) + omega(q)**2._wp)*(omega(q)/(d_cbR_${XYZ}$ (q, &
-                                                      & ${SV}$)**2._wp + omega(q)*(1._wp - 2._wp*d_cbR_${XYZ}$ (q, ${SV}$))))
+                                                delta(q) = d_cbR_${XYZ}$ (q, ${SV}$)**2._wp &
+                                                      & + omega(q)*(1._wp - 2._wp*d_cbR_${XYZ}$ (q, ${SV}$))
+                                                alpha(q) = (d_cbR_${XYZ}$ (q, ${SV}$)*(1._wp + d_cbR_${XYZ}$ (q, ${SV}$) &
+                                                      & - 3._wp*omega(q)) + omega(q)**2._wp)*omega(q)
                                             end do
+                                            alpha(0) = alpha(0)*(delta(1)*delta(2))
+                                            alpha(1) = alpha(1)*(delta(0)*delta(2))
+                                            alpha(2) = alpha(2)*(delta(0)*delta(1))
                                         else if (wenoz) then
                                             $:GPU_LOOP(parallelism='[seq]')
                                             do q = 0, weno_num_stencils
