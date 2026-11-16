@@ -1122,8 +1122,17 @@ contains
                                                 alpha(q) = d_cbL_${XYZ}$ (q, ${SV}$)/(beta(q)**2._wp)
                                             end do
                                         else if (mapped_weno) then
+                                            ! M4.1 W2: JS weights over a common denominator. beta(q) := prod_{k/=q} beta_k**2
+                                            ! (reused by the R side), so omega_q = d_q*beta(q)/sum(d*beta) needs no 1/beta_q**2.
+                                            ! beta**4-scale products: safe for 1e-77 < beta < 1e77 (examples: weno_eps >= 1e-40).
+                                            delta(0) = beta(0)**2._wp
+                                            delta(1) = beta(1)**2._wp
+                                            delta(2) = beta(2)**2._wp
+                                            beta(0) = delta(1)*delta(2)
+                                            beta(1) = delta(0)*delta(2)
+                                            beta(2) = delta(0)*delta(1)
                                             do q = 0, weno_num_stencils
-                                                alpha(q) = d_cbL_${XYZ}$ (q, ${SV}$)/(beta(q)**2._wp)
+                                                alpha(q) = d_cbL_${XYZ}$ (q, ${SV}$)*beta(q)
                                             end do
                                             omega = alpha/sum(alpha)
                                             ! M4.1 W1: Henrick mapping g_q = N_q/D_q over a common denominator:
@@ -1190,8 +1199,9 @@ contains
                                                 alpha(q) = d_cbR_${XYZ}$ (q, ${SV}$)/(beta(q)**2._wp)
                                             end do
                                         else if (mapped_weno) then
+                                            ! M4.1 W2: beta(q) holds prod_{k/=q} beta_k**2 (set on the L side)
                                             do q = 0, weno_num_stencils
-                                                alpha(q) = d_cbR_${XYZ}$ (q, ${SV}$)/(beta(q)**2._wp)
+                                                alpha(q) = d_cbR_${XYZ}$ (q, ${SV}$)*beta(q)
                                             end do
                                             omega = alpha/sum(alpha)
                                             ! M4.1 W1: Henrick mapping g_q = N_q/D_q over a common denominator:
